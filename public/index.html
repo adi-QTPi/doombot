@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>web terminal</title>
+<link rel="stylesheet" href="/vendor/xterm/css/xterm.css" />
+<style>
+  :root { color-scheme: dark; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: flex;
+    flex-direction: column;
+    background: #0d1117;
+    color: #d1d5db;
+    font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px;
+    border-bottom: 1px solid #21262d;
+    color: #8b949e;
+    flex: 0 0 auto;
+  }
+  header strong { color: #d1d5db; font-weight: 600; }
+  #info { margin-left: auto; font-size: 12px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #6e7681; flex: 0 0 auto; }
+  .dot.on { background: #3fb950; box-shadow: 0 0 6px #3fb950; }
+  button {
+    background: #21262d;
+    color: #d1d5db;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 4px 10px;
+    font: inherit;
+    cursor: pointer;
+  }
+  button:hover { background: #30363d; }
+  #wrap { flex: 1 1 auto; min-height: 0; padding: 8px 10px; }
+  #term { width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+  <header>
+    <span id="status" class="dot"></span>
+    <strong>web terminal</strong>
+    <button id="reset" type="button">new session</button>
+    <span id="info">connecting...</span>
+  </header>
+  <div id="wrap"><div id="term"></div></div>
+
+<script src="/vendor/xterm/lib/xterm.js"></script>
+<script src="/vendor/addon-fit/lib/addon-fit.js"></script>
+<script>
+  const STORAGE_KEY = 'webshell.session';
+  const statusEl = document.getElementById('status');
+  const infoEl = document.getElementById('info');
+
+  const term = new Terminal({
+    cursorBlink: true,
+    scrollback: 10000,
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+    fontSize: 13,
+    theme: {
+      background: '#0d1117',
+      foreground: '#d1d5db',
+      cursor: '#7ee787',
+      selectionBackground: '#264f78',
+    },
+  });
+
+  const fit = new FitAddon.FitAddon();
+  term.loadAddon(fit);
+  term.open(document.getElementById('term'));
+
+  let ws = null;
+  let ended = false;
+  let sessionId = localStorage.getItem(STORAGE_KEY) || '';
+
+  function setStatus(on) {
+    statusEl.className = on ? 'dot on' : 'dot';
+  }
+
+  function connect() {
+    fit.fit();
+    ended = false;
+
+    const params = new URLSearchParams({ cols: term.cols, rows: term.rows });
+    if (sessionId) params.set('session', sessionId);
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+
+    ws = new WebSocket(`${proto}://${location.host}/ws?${params}`);
+
+    ws.onopen = () => {
+      setStatus(true);
+      infoEl.textContent = sessionId ? 'attached' : 'starting...';
+    };
+
+    ws.onmessage = (ev) => {
+      const msg = JSON.parse(ev.data);
+      if (msg.t === 'o') {
+        term.write(msg.d);
+      } else if (msg.t === 's') {
+        sessionId = msg.id;
+        localStorage.setItem(STORAGE_KEY, sessionId);
+        infoEl.textContent = `session ${sessionId.slice(0, 8)}`;
+      } else if (msg.t === 'x') {
+        ended = true;
+        setStatus(false);
+        infoEl.textContent = 'session ended';
+        term.write(`\r\n\u001b[90m[process exited with code ${msg.code}]\u001b[0m\r\n`);
+      }
+    };
+
+    ws.onclose = () => {
+      setStatus(false);
+      if (!ended) infoEl.textContent = 'disconnected, reload to reattach';
+    };
+  }
+
+  term.onData((d) => {
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'i', d }));
+  });
+
+  term.onResize(({ cols, rows }) => {
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'r', cols, rows }));
+  });
+
+  let resizeTimer = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      try { fit.fit(); } catch {}
+    }, 80);
+  });
+
+  document.getElementById('reset').addEventListener('click', () => {
+    if (ws) ws.close();
+    if (sessionId) fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' }).catch(() => {});
+    sessionId = '';
+    localStorage.removeItem(STORAGE_KEY);
+    term.reset();
+    connect();
+    term.focus();
+  });
+
+  connect();
+  term.focus();
+</script>
+</body>
+</html>
