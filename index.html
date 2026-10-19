@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Tile Flip</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="app">
+    <header class="bar">
+      <h1>Tile Flip</h1>
+      <div class="stats">
+        <div class="stat"><span id="moves">0</span><small>moves</small></div>
+        <div class="stat"><span id="time">0:00</span><small>time</small></div>
+        <div class="stat"><span id="best">-</span><small>best</small></div>
+      </div>
+      <button id="newGame" class="ghost" type="button">New game</button>
+    </header>
+
+    <div id="board" class="board" role="group" aria-label="Memory board"></div>
+
+    <p id="hint" class="hint">Flip two tiles to find a matching pair.</p>
+  </main>
+
+  <div id="overlay" class="overlay" hidden>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="winTitle">
+      <h2 id="winTitle">Solved</h2>
+      <p id="winText"></p>
+      <button id="playAgain" class="primary" type="button">Play again</button>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
