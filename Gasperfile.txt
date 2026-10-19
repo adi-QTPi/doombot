@@ -17,6 +17,22 @@ elif command -v yum >/dev/null 2>&1; then
   yum install -y python3 make gcc-c++
 fi
 
+# node-gyp otherwise downloads node headers from the network before building,
+# and that fetch (unofficial-builds.nodejs.org) times out here, so the node-pty
+# build dies with "gyp ERR! configure error". The node image already ships the
+# matching headers next to the node binary, so point node-gyp at them and it
+# skips the download entirely.
+NODE_PREFIX="$(node -p "require('path').dirname(require('path').dirname(process.execPath))")"
+if [ -f "$NODE_PREFIX/include/node/node.h" ]; then
+  export npm_config_nodedir="$NODE_PREFIX"
+fi
+
+# Fallbacks for the case where the bundled headers are missing: use the
+# official mirror and retry patiently instead of failing on the first timeout.
+export npm_config_disturl="https://nodejs.org/download/release"
+export npm_config_fetch_retries="${npm_config_fetch_retries:-5}"
+export npm_config_fetch_retry_maxtimeout="${npm_config_fetch_retry_maxtimeout:-120000}"
+
 npm install
 
 # Bind every interface so the gasper proxy can reach the app from outside the
