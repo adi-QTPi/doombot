@@ -1,6 +1,7 @@
 'use strict';
 
 const http = require('node:http');
+const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const express = require('express');
@@ -10,11 +11,40 @@ const { spawn } = require('node:child_process');
 
 const PORT = Number(process.env.PORT || 8004);
 const HOST = process.env.HOST || '127.0.0.1';
-const SHELL_BIN = process.env.SHELL_BIN || process.env.SHELL || '/bin/bash';
 const CMD_TIMEOUT_MS = Number(process.env.CMD_TIMEOUT_MS || 30_000);
 const MAX_STREAM_BYTES = Number(process.env.MAX_STREAM_BYTES || 1_000_000);
 const SESSION_IDLE_MS = Number(process.env.SESSION_IDLE_MS || 600_000);
 const REPLAY_BYTES = Number(process.env.REPLAY_BYTES || 200_000);
+
+function isExecutableFile(candidate) {
+  try {
+    return fs.statSync(candidate).isFile();
+  } catch {
+    return false;
+  }
+}
+
+// Keep the runtime footprint small: bash is not guaranteed to exist (alpine and
+// other slim images ship busybox sh only), so pick the first shell that is
+// actually present instead of hardcoding /bin/bash. node-pty otherwise dies
+// with "execvp(3) failed.: No such file or directory" when spawning.
+function resolveShell() {
+  const candidates = [process.env.SHELL_BIN, process.env.SHELL, '/bin/bash', '/bin/sh'].filter(Boolean);
+
+  for (const candidate of candidates) {
+    if (candidate.includes(path.sep)) {
+      if (isExecutableFile(candidate)) return candidate;
+      continue;
+    }
+    for (const dir of (process.env.PATH || '').split(path.delimiter)) {
+      if (dir && isExecutableFile(path.join(dir, candidate))) return candidate;
+    }
+  }
+
+  return 'sh';
+}
+
+const SHELL_BIN = resolveShell();
 
 const app = express();
 
