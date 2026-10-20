@@ -1,12 +1,12 @@
 :root {
-  color-scheme: dark;
-  --bg: #0b1020;
-  --panel: #141a2e;
-  --line: #263055;
-  --text: #e6e9f5;
-  --muted: #8b93b3;
-  --accent: #6ee7b7;
-  --accent-2: #38bdf8;
+  color-scheme: light;
+  --bg: #f6f7fb;
+  --panel: #ffffff;
+  --line: #d9deec;
+  --text: #0f172a;
+  --muted: #5c6784;
+  --accent: #10b981;
+  --accent-2: #0284c7;
 }
 
 * { box-sizing: border-box; }
@@ -17,7 +17,7 @@ body {
   display: grid;
   place-items: center;
   padding: 24px;
-  background: radial-gradient(1200px 600px at 50% -10%, #1b2340, var(--bg));
+  background: radial-gradient(1200px 600px at 50% -10%, #ffffff, var(--bg));
   color: var(--text);
   font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
@@ -82,7 +82,7 @@ button {
 
 .ghost:hover {
   border-color: var(--accent-2);
-  color: #fff;
+  color: #0b1220;
 }
 
 .board {
@@ -135,21 +135,21 @@ button {
 }
 
 .face-back {
-  background: linear-gradient(145deg, #1e2748, #161d33);
+  background: linear-gradient(145deg, #fbfcff, #eaeef8);
   border: 1px solid var(--line);
   color: var(--muted);
   font-size: 18px;
 }
 
 .face-front {
-  background: #0f172a;
+  background: #ffffff;
   border: 1px solid var(--accent-2);
   transform: rotateY(180deg);
 }
 
 .tile.matched .face-front {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(110, 231, 183, .35), 0 0 22px rgba(110, 231, 183, .25);
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, .35), 0 0 22px rgba(16, 185, 129, .25);
 }
 
 .hint {
@@ -164,7 +164,7 @@ button {
   inset: 0;
   display: grid;
   place-items: center;
-  background: rgba(5, 8, 18, .72);
+  background: rgba(15, 23, 42, .35);
   backdrop-filter: blur(4px);
 }
 
