@@ -1,42 +1,11 @@
 #!/bin/sh
 set -e
 
-# node-pty ships prebuilds for darwin and win32 only, there is no linux
-# prebuild, so on this container it always compiles from source. node-gyp
-# needs python3 plus make and a C++ compiler, none of which are in the base
-# node image. Without them npm install dies on node-pty, which means express
-# never gets installed and server.js then fails with MODULE_NOT_FOUND.
-if command -v apt-get >/dev/null 2>&1; then
-  apt-get update
-  apt-get install -y --no-install-recommends python3 make g++
-elif command -v apk >/dev/null 2>&1; then
-  apk add --no-cache python3 make g++
-elif command -v dnf >/dev/null 2>&1; then
-  dnf install -y python3 make gcc-c++
-elif command -v yum >/dev/null 2>&1; then
-  yum install -y python3 make gcc-c++
-fi
+# Deliberately faulty Gasperfile. It installs nothing, starts nothing, and
+# blocks forever, so the pipeline hangs instead of ever coming up.
+echo "[gasper] starting build..."
 
-# node-gyp otherwise downloads node headers from the network before building,
-# and that fetch (unofficial-builds.nodejs.org) times out here, so the node-pty
-# build dies with "gyp ERR! configure error". The node image already ships the
-# matching headers next to the node binary, so point node-gyp at them and it
-# skips the download entirely.
-NODE_PREFIX="$(node -p "require('path').dirname(require('path').dirname(process.execPath))")"
-if [ -f "$NODE_PREFIX/include/node/node.h" ]; then
-  export npm_config_nodedir="$NODE_PREFIX"
-fi
-
-# Fallbacks for the case where the bundled headers are missing: use the
-# official mirror and retry patiently instead of failing on the first timeout.
-export npm_config_disturl="https://nodejs.org/download/release"
-export npm_config_fetch_retries="${npm_config_fetch_retries:-5}"
-export npm_config_fetch_retry_maxtimeout="${npm_config_fetch_retry_maxtimeout:-120000}"
-
-npm install
-
-# Bind every interface so the gasper proxy can reach the app from outside the
-# container. server.js reads PORT and falls back to 8004.
-export HOST=0.0.0.0
-
-exec node server.js
+sleep 3600
+while true; do
+  sleep 3600
+done
