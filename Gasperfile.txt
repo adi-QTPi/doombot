@@ -35,6 +35,13 @@ export npm_config_fetch_retry_maxtimeout="${npm_config_fetch_retry_maxtimeout:-1
 
 npm install
 
+# The terminal sits behind a login page. Credentials come from the environment
+# only, nothing is baked into this file: set AUTH_USER and AUTH_PASS in the
+# gasper environment. The `:?` expansion aborts the deploy if either is missing,
+# so the shell is never exposed because a default was left in place.
+export AUTH_USER="${AUTH_USER:?AUTH_USER is required}"
+export AUTH_PASS="${AUTH_PASS:?AUTH_PASS is required}"
+
 # Bind every interface so the gasper proxy can reach the app from outside the
 # container. server.js reads PORT and falls back to 8004.
 export HOST=0.0.0.0

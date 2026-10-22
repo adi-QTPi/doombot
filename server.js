@@ -15,6 +15,13 @@ const CMD_TIMEOUT_MS = Number(process.env.CMD_TIMEOUT_MS || 30_000);
 const MAX_STREAM_BYTES = Number(process.env.MAX_STREAM_BYTES || 1_000_000);
 const SESSION_IDLE_MS = Number(process.env.SESSION_IDLE_MS || 600_000);
 const REPLAY_BYTES = Number(process.env.REPLAY_BYTES || 200_000);
+const AUTH_USER = process.env.AUTH_USER || '';
+const AUTH_PASS = process.env.AUTH_PASS || '';
+const AUTH_ENABLED = Boolean(AUTH_USER && AUTH_PASS);
+const AUTH_TTL_MS = Number(process.env.AUTH_TTL_MS || 12 * 60 * 60 * 1000);
+const LOGIN_MAX_ATTEMPTS = Number(process.env.LOGIN_MAX_ATTEMPTS || 10);
+const LOGIN_WINDOW_MS = Number(process.env.LOGIN_WINDOW_MS || 5 * 60 * 1000);
+const AUTH_COOKIE = 'webshell_token';
 
 function isExecutableFile(candidate) {
   try {
@@ -49,6 +56,167 @@ const SHELL_BIN = resolveShell();
 const app = express();
 
 app.use(express.json({ limit: '64kb' }));
+
+function parseCookies(header) {
+  const out = {};
+  if (!header) return out;
+
+  for (const part of header.split(';')) {
+    const eq = part.indexOf('=');
+    if (eq === -1) continue;
+    const name = part.slice(0, eq).trim();
+    if (!name) continue;
+    try {
+      out[name] = decodeURIComponent(part.slice(eq + 1).trim());
+    } catch {
+      out[name] = part.slice(eq + 1).trim();
+    }
+  }
+
+  return out;
+}
+
+function safeEqual(a, b) {
+  const left = Buffer.from(String(a));
+  const right = Buffer.from(String(b));
+  return left.length === right.length && crypto.timingSafeEqual(left, right);
+}
+
+const authTokens = new Map();
+
+function issueToken() {
+  const token = crypto.randomBytes(32).toString('base64url');
+  authTokens.set(token, Date.now() + AUTH_TTL_MS);
+  return token;
+}
+
+function tokenValid(token) {
+  const expires = authTokens.get(token);
+  if (!expires) return false;
+  if (expires <= Date.now()) {
+    authTokens.delete(token);
+    return false;
+  }
+  return true;
+}
+
+function isAuthed(req) {
+  if (!AUTH_ENABLED) return true;
+  return tokenValid(parseCookies(req.headers.cookie)[AUTH_COOKIE]);
+}
+
+function setAuthCookie(req, res, value) {
+  const secure = req.secure || req.headers['x-forwarded-proto'] === 'https';
+  const attrs = [`${AUTH_COOKIE}=${value}`, 'HttpOnly', 'SameSite=Lax', 'Path=/'];
+  if (secure) attrs.push('Secure');
+  if (!value) attrs.push('Max-Age=0');
+  res.setHeader('Set-Cookie', attrs.join('; '));
+}
+
+// Throttle guessing so the login form is not a free brute-force oracle for the
+// password sitting in front of a shell.
+const loginFailures = new Map();
+
+function loginBlocked(ip) {
+  const entry = loginFailures.get(ip);
+  if (!entry) return false;
+  if (entry.resetAt <= Date.now()) {
+    loginFailures.delete(ip);
+    return false;
+  }
+  return entry.count >= LOGIN_MAX_ATTEMPTS;
+}
+
+function recordLoginFailure(ip) {
+  const now = Date.now();
+  const entry = loginFailures.get(ip);
+  if (!entry || entry.resetAt <= now) {
+    loginFailures.set(ip, { count: 1, resetAt: now + LOGIN_WINDOW_MS });
+    return;
+  }
+  entry.count += 1;
+}
+
+// Only ever bounce back to a path on this host, never to an attacker-supplied
+// absolute URL.
+function safeNext(value) {
+  if (typeof value !== 'string') return '/';
+  if (!value.startsWith('/') || value.startsWith('//')) return '/';
+  return value;
+}
+
+function clientIp(req) {
+  return req.ip || (req.socket && req.socket.remoteAddress) || 'unknown';
+}
+
+app.get('/login', (req, res) => {
+  if (AUTH_ENABLED && isAuthed(req)) {
+    res.redirect('/');
+    return;
+  }
+  res.sendFile(path.join(__dirname, 'public', 'login.html'));
+});
+
+app.post('/api/login', (req, res) => {
+  if (!AUTH_ENABLED) {
+    res.json({ ok: true, next: '/' });
+    return;
+  }
+
+  const ip = clientIp(req);
+  if (loginBlocked(ip)) {
+    res.status(429).json({ error: 'too many attempts, wait a few minutes' });
+    return;
+  }
+
+  const body = req.body || {};
+  const username = typeof body.username === 'string' ? body.username : '';
+  const password = typeof body.password === 'string' ? body.password : '';
+
+  const userOk = safeEqual(username, AUTH_USER);
+  const passOk = safeEqual(password, AUTH_PASS);
+
+  if (!userOk || !passOk) {
+    recordLoginFailure(ip);
+    res.status(401).json({ error: 'invalid username or password' });
+    return;
+  }
+
+  loginFailures.delete(ip);
+  setAuthCookie(req, res, issueToken());
+  res.json({ ok: true, next: safeNext(body.next) });
+});
+
+app.post('/api/logout', (req, res) => {
+  const token = parseCookies(req.headers.cookie)[AUTH_COOKIE];
+  if (token) authTokens.delete(token);
+  setAuthCookie(req, res, '');
+  res.json({ ok: true });
+});
+
+const PUBLIC_PATHS = new Set(['/login', '/login.html', '/api/login', '/api/logout']);
+
+// Everything below this gate is the shell: the terminal page, its APIs and the
+// websocket all need a session cookie.
+app.use((req, res, next) => {
+  if (!AUTH_ENABLED || PUBLIC_PATHS.has(req.path) || req.path.startsWith('/vendor/')) {
+    next();
+    return;
+  }
+
+  if (isAuthed(req)) {
+    next();
+    return;
+  }
+
+  if (req.path.startsWith('/api/')) {
+    res.status(401).json({ error: 'authentication required' });
+    return;
+  }
+
+  res.redirect(`/login?next=${encodeURIComponent(req.originalUrl)}`);
+});
+
 app.use('/vendor/xterm', express.static(path.join(__dirname, 'node_modules', '@xterm', 'xterm')));
 app.use('/vendor/addon-fit', express.static(path.join(__dirname, 'node_modules', '@xterm', 'addon-fit')));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -242,6 +410,11 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws' });
 
 wss.on('connection', (ws, req) => {
+  if (AUTH_ENABLED && !isAuthed(req)) {
+    ws.close(1008, 'authentication required');
+    return;
+  }
+
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const requested = url.searchParams.get('session');
   const cols = clamp(url.searchParams.get('cols') || 80, 2, 500);
@@ -298,6 +471,11 @@ server.listen(PORT, HOST, () => {
   console.log(`web terminal listening on http://${HOST}:${PORT}`);
   console.log(`shell: ${SHELL_BIN}  cwd: ${process.cwd()}`);
   console.log(`idle sessions are reaped after ${Math.round(SESSION_IDLE_MS / 1000)}s`);
+  if (AUTH_ENABLED) {
+    console.log(`auth: enabled, user "${AUTH_USER}", sessions last ${Math.round(AUTH_TTL_MS / 3_600_000)}h, login at /login`);
+  } else {
+    console.warn('WARNING: AUTH_USER/AUTH_PASS are not set. Set both to put the login page in front of the terminal.');
+  }
   if (HOST !== '127.0.0.1' && HOST !== 'localhost') {
     console.warn(`WARNING: bound to ${HOST}. This is an interactive shell exposed to the network. Do not do this without auth in front.`);
   }

@@ -47,6 +47,7 @@
     <span id="status" class="dot"></span>
     <strong>web terminal</strong>
     <button id="reset" type="button">new session</button>
+    <button id="logout" type="button">sign out</button>
     <span id="info">connecting...</span>
   </header>
   <div id="wrap"><div id="term"></div></div>
@@ -114,8 +115,12 @@
       }
     };
 
-    ws.onclose = () => {
+    ws.onclose = (ev) => {
       setStatus(false);
+      if (ev.code === 1008) {
+        location.href = `/login?next=${encodeURIComponent(location.pathname)}`;
+        return;
+      }
       if (!ended) infoEl.textContent = 'disconnected, reload to reattach';
     };
   }
@@ -144,6 +149,13 @@
     term.reset();
     connect();
     term.focus();
+  });
+
+  document.getElementById('logout').addEventListener('click', async () => {
+    if (ws) ws.close();
+    localStorage.removeItem(STORAGE_KEY);
+    await fetch('/api/logout', { method: 'POST' }).catch(() => {});
+    location.href = '/login';
   });
 
   connect();
