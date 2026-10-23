@@ -4,6 +4,14 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Tile Flip</title>
+<script>
+  (() => {
+    const stored = localStorage.getItem('tile-flip.theme');
+    document.documentElement.dataset.theme = stored === 'light' || stored === 'dark'
+      ? stored
+      : (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  })();
+</script>
 <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -16,11 +24,17 @@
         <div class="stat"><span id="best">-</span><small>best</small></div>
       </div>
       <button id="newGame" class="ghost" type="button">New game</button>
+      <button id="theme" class="ghost" type="button" aria-pressed="false">Dark</button>
     </header>
 
     <div id="board" class="board" role="group" aria-label="Memory board"></div>
 
     <p id="hint" class="hint">Flip two tiles to find a matching pair.</p>
+
+    <footer class="foot">
+      <span>8 pairs</span>
+      <span>best score is saved in this browser</span>
+    </footer>
   </main>
 
   <div id="overlay" class="overlay" hidden>

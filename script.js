@@ -1,5 +1,6 @@
 const SYMBOLS = ['🦊', '🦉', '🐙', '🌵', '🍄', '🔮', '🚀', '⚡'];
 const BEST_KEY = 'tile-flip.best';
+const THEME_KEY = 'tile-flip.theme';
 const FLIP_BACK_MS = 650;
 
 const boardEl = document.getElementById('board');
@@ -7,6 +8,7 @@ const movesEl = document.getElementById('moves');
 const timeEl = document.getElementById('time');
 const bestEl = document.getElementById('best');
 const hintEl = document.getElementById('hint');
+const themeEl = document.getElementById('theme');
 const overlayEl = document.getElementById('overlay');
 const winTextEl = document.getElementById('winText');
 
@@ -137,6 +139,26 @@ function newGame() {
 
   boardEl.replaceChildren(...shuffle([...SYMBOLS, ...SYMBOLS]).map(buildTile));
 }
+
+function currentTheme() {
+  return document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
+}
+
+function applyTheme(theme) {
+  const dark = theme === 'dark';
+  document.documentElement.dataset.theme = theme;
+  themeEl.textContent = dark ? 'Light' : 'Dark';
+  themeEl.setAttribute('aria-pressed', String(dark));
+  themeEl.setAttribute('aria-label', dark ? 'Switch to light theme' : 'Switch to dark theme');
+}
+
+themeEl.addEventListener('click', () => {
+  const next = currentTheme() === 'dark' ? 'light' : 'dark';
+  localStorage.setItem(THEME_KEY, next);
+  applyTheme(next);
+});
+
+applyTheme(currentTheme());
 
 document.getElementById('newGame').addEventListener('click', newGame);
 document.getElementById('playAgain').addEventListener('click', newGame);
